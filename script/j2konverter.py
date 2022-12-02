@@ -9,16 +9,30 @@ from progress.bar import ShadyBar
 
 
 class ProgressBar(ShadyBar):
+    """A generic Progress Bar with a custom suffix.
+
+    """
     suffix = "[%(index)d/%(max)d] [%(avg).3fs/item] [%(elapsed_td)ss/%(eta_td)ss]"
 
 
-def log(msg: str, new=False):
+def log(msg: str, new=False) -> None:
+    """Logs a message string into a log.txt
+
+    Args:
+        msg (str): The message to log.
+        new (bool, optional): If set to true, erases all previous contents of the file. Defaults to False.
+    """
     log = open(os.path.join(".", "log.txt"), mode="a" if not new else "w")
     log.write(f"[{str(datetime.now())}]: {msg}\n")
     log.close()
 
 
-def logprint(msg: str):
+def logprint(msg: str) -> None:
+    """Prints and logs at the same time.
+
+    Args:
+        msg (str): Message to print and log.
+    """
     print(msg)
     log(msg)
 
@@ -29,6 +43,8 @@ class Metadata(pydantic.BaseModel):
     chapter: int = 0
     page: int = 0
     name: str = ""
+    """Pydantic data class. Used to store the metadata.
+    """
 
     def __lt__(self, other):
         if self.volume == other.volume:
@@ -41,6 +57,14 @@ class Metadata(pydantic.BaseModel):
 
 
 def cleanStr(inputStr: str) -> str:
+    """Cleans a string until it can represent a numeric.
+
+    Args:
+        inputStr (str): The string to clean.
+
+    Returns:
+        str: A string that represents a numeric.
+    """
     temp = list(inputStr)
     while temp and temp[0].isdigit() is False:
         temp.pop(0)
@@ -52,7 +76,17 @@ def cleanStr(inputStr: str) -> str:
     return temp
 
 
+#! In a dire need for refactoring
 def fillMetadata(filename: str, format: str) -> Metadata:
+    """Matches a given pattern to a filename to extract metadata.
+
+    Args:
+        filename (str): The filename containing metadata.
+        format (str): The preset pattern to match with.
+
+    Returns:
+        Metadata: The extracted metadata.
+    """
     data = Metadata()
     tokens = format.split(sep="|")
     log(f"Detected format: {tokens}")
@@ -105,12 +139,29 @@ def fillMetadata(filename: str, format: str) -> Metadata:
 
 
 def genArchName(data: Metadata) -> str:
+    """Generates a nice looking archive name from some metadata.
+
+    Args:
+        data (Metadata): The metadata used to generate the archive name.
+
+    Returns:
+        str: The archive name.
+    """
     j2kfilename = ["Vol. " + data.volume, " Ch. " + data.chapter, " - " + data.name, ".cbz"]
 
     return "".join(j2kfilename)
 
 
 def decompress(archPath: str, destPath: str) -> list:
+    """Decompresses a CBZ archive.
+
+    Args:
+        archPath (str): Path to the archive.
+        destPath (str): Path to the output folder.
+
+    Returns:
+        list: A list of extracted files.
+    """
     if os.path.isfile(archPath) is not True:
         logprint(f"No such file: {archPath}")
         #! Add exception handling
@@ -133,7 +184,13 @@ def decompress(archPath: str, destPath: str) -> list:
     return extractedFiles
 
 
-def compress(srcPath: str, archPath: str):
+def compress(srcPath: str, archPath: str) -> None:
+    """Adds a single file to an archive.
+
+    Args:
+        srcPath (str): Path to the file.
+        archPath (str): Path to the archive.
+    """
     if os.path.isfile(srcPath) is not True:
         logprint(f"No such file: {srcPath}")
         #! Add exception handling
@@ -148,7 +205,12 @@ def compress(srcPath: str, archPath: str):
         log(f"Compressed {srcPath} as {filename}")
 
 
-def cleanUp(dir: str):
+def cleanUp(dir: str) -> None:
+    """Recursively deletes everything in a directory.
+
+    Args:
+        dir (str): Path to the directory.
+    """
     log(f"Removing temporary directory: {dir}")
     rmtree(dir)
     pass
@@ -162,6 +224,7 @@ def main():
     if len(sys.argv) >= 4:
         dest = sys.argv[3].strip()
 
+    # Generate a list of archives to process
     archives = list()
     if os.path.isfile(src):
         if zipfile.is_zipfile(src):
@@ -176,6 +239,7 @@ def main():
     else:
         logprint("No archives found")
 
+    # If the output folder already exists, clean it
     if not dest:
         dest = os.path.join(".", "output")
     if os.path.isdir(dest) is True:
@@ -183,11 +247,14 @@ def main():
 
     os.mkdir(dest)
 
+    # Process each archive
     for filepath in archives:
         path, name = os.path.split(filepath)
         print(f"\nProcessing [{name}]")
 
         class ArchOrder:
+            """Helper class to facilitate ordered sorting of pages using a priority queue.
+            """
 
             def __init__(self, filepath: str, format: str) -> None:
                 self.filepath = filepath
@@ -197,8 +264,10 @@ def main():
             def __lt__(self, other):
                 return self.metadata < other.metadata
 
+        # Decompress the current archive into a temporary directory
         files = decompress(filepath, os.path.join(dest, "temp"))
 
+        # Add all files to the heap, using the metadata to sort them in an ascending order for reading
         heapProgress = ProgressBar(message="Exploring files", max=len(files))
         heap = []
         for file in files:
@@ -206,6 +275,8 @@ def main():
             heapProgress.next()
         print("\n")
 
+        # Compress back into smaller archives based on chapters
+        # Remove all the temporary files after done, leaving only an archive
         compressProgress = ProgressBar(message="Compressing", max=len(files))
         lastArchName = ""
         while heap:
