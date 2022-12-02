@@ -57,27 +57,55 @@ def fillMetadata(filename: str, format: str) -> Metadata:
     tokens = format.split(sep="|")
     log(f"Detected format: {tokens}")
     lexemes = filename.strip().split(sep=" ")
+    log(f"Detected lexemes: {lexemes}")
 
     table = dict()
-    for i in range(len(tokens)):
-        if tokens[i].strip() not in table.keys():
-            table[tokens[i].strip()] = ""
 
-        table[tokens[i].strip()] = " ".join([table[tokens[i].strip()], lexemes[i].strip()]).strip()
+    index = 0
+
+    for token in tokens:
+        if index >= len(lexemes):
+            break
+
+        if token.startswith("["):
+            tok = token[1:-1]
+            if tok not in table.keys():
+                table[tok] = ""
+
+            while not lexemes[index].endswith("]"):
+                table[tok] = " ".join([table[tok], lexemes[index]])
+                index += 1
+
+            table[tok] = " ".join([table[tok], lexemes[index]])
+            index += 1
+            table[tok] = table[tok].strip()[1:-1]
+            continue
+
+        if token.startswith("loop"):
+            tok = token[4:]
+
+            while lexemes[index] != tok:
+                index += 1
+
+            continue
+
+        if token not in table.keys():
+            table[token] = ""
+
+        table[token] = "".join([table[token], lexemes[index]])
+        index += 1
 
     data.volume = cleanStr(table["volume"])
     data.chapter = cleanStr(table["chapter"])
     data.page = cleanStr(table["page"])
     data.name = table["name"]
+    data.scanner = table["scanner"] if "scanner" in table.keys() else ""
 
     return data
 
 
 def genArchName(data: Metadata) -> str:
-    j2kfilename = [
-        data.scanner + "_" if data.scanner else "", "Vol. " + data.volume, " Ch. " + data.chapter,
-        " - " + data.name, ".cbz"
-    ]
+    j2kfilename = ["Vol. " + data.volume, " Ch. " + data.chapter, " - " + data.name, ".cbz"]
 
     return "".join(j2kfilename)
 
@@ -113,8 +141,8 @@ def compress(srcPath: str, archPath: str):
     log(f"Compressing {srcPath}")
     log(f"Compressing in {archPath}")
 
-    with zipfile.ZipFile(archPath, mode="a", compression=zipfile.ZIP_DEFLATED,
-                         compresslevel=9) as arch:
+    with zipfile.ZipFile(archPath, mode="a", compression=zipfile.ZIP_STORED,
+                         compresslevel=None) as arch:
         filepath, filename = os.path.split(srcPath)
         arch.write(srcPath, arcname=filename)
         log(f"Compressed {srcPath} as {filename}")
